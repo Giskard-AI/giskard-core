@@ -77,6 +77,14 @@ class _Registry:
                     base_cls = meta["origin"]
 
         if kind not in self.subclasses[base_cls]:
+            # If kind is not found in base_cls registry, check if any registered
+            # subclass is itself a discriminated base and might have this kind
+            for registered_subclass in self.subclasses[base_cls].values():
+                if registered_subclass in self.subclasses:
+                    # This subclass is itself a discriminated base, check its registry
+                    if kind in self.subclasses[registered_subclass]:
+                        # Found in nested discriminated base, resolve through it
+                        return self.subclasses[registered_subclass][kind]
             raise ValueError(f"Kind {kind} is not registered for {base_cls}")
 
         return self.subclasses[base_cls][kind]
