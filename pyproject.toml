@@ -1,6 +1,6 @@
 [project]
 name = "giskard-core"
-version = "0.1.1"
+version = "0.1.2"
 description = "Core shared utilities and foundational components for the Giskard library ecosystem."
 readme = "README.md"
 requires-python = ">=3.11"
