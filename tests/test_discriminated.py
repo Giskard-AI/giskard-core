@@ -11,75 +11,62 @@ class Animal(Discriminated):
     name: str
 
 
-@Animal.register("dog")
-class Dog(Animal):
-    """A dog."""
+class Pet(Animal):
+    """Base class for pets."""
 
-    breed: str
+    name: str
+
+
+@Animal.register("tigger")
+class Tigger(Pet):
+    """A tigger."""
+
+    stripes: int = 100
 
 
 @Animal.register("cat")
-class Cat(Animal):
+class Cat(Pet):
     """A cat."""
 
     lives: int = 9
 
 
-def test_discriminated_base_registration():
+# Registering as Pet should work as well (same behavior as registering as Animal)
+@Pet.register("dog")
+class Dog(Pet):
+    """A dog."""
+
+    breed: str
+
+
+@pytest.mark.parametrize(
+    "animal,kind",
+    [
+        (Tigger(name="Tigger", stripes=100), "tigger"),
+        (Dog(name="Buddy", breed="Labrador"), "dog"),
+        (Cat(name="Whiskers", lives=9), "cat"),
+    ],
+)
+def test_discriminated_base_registration(animal: Animal, kind: str):
     """Test that discriminated_base decorator registers the base class."""
-    dog = Dog(name="Buddy", breed="Labrador")
-    assert dog.kind == "dog"
-    assert dog.name == "Buddy"
-    assert dog.breed == "Labrador"
+    assert animal.kind == kind
 
+    model_dump = animal.model_dump()
+    assert model_dump["kind"] == kind
+    assert model_dump["name"] == animal.name
 
-def test_discriminated_serialization():
-    """Test that discriminated types can be serialized and deserialized."""
-    dog = Dog(name="Buddy", breed="Labrador")
-    serialized = dog.model_dump()
-    assert serialized["kind"] == "dog"
-    assert serialized["name"] == "Buddy"
-    assert serialized["breed"] == "Labrador"
-
-
-def test_discriminated_deserialization():
-    """Test that discriminated types can be deserialized from dict."""
-    data = {"kind": "dog", "name": "Buddy", "breed": "Labrador"}
-    animal = Animal.model_validate(data)
-    assert isinstance(animal, Dog)
-    assert animal.name == "Buddy"
-    assert animal.breed == "Labrador"
-
-
-def test_discriminated_multiple_types():
-    """Test that multiple discriminated types can coexist."""
-    dog = Dog(name="Buddy", breed="Labrador")
-    cat = Cat(name="Whiskers", lives=9)
-
-    dog_data = dog.model_dump()
-    cat_data = cat.model_dump()
-
-    assert Animal.model_validate(dog_data).kind == "dog"
-    assert Animal.model_validate(cat_data).kind == "cat"
+    assert Animal.model_validate(model_dump) == animal
 
 
 def test_discriminated_invalid_kind():
     """Test that invalid kind raises an error."""
-    data = {"kind": "invalid", "name": "Unknown"}
-    with pytest.raises(ValueError, match="Kind invalid is not registered"):
+    data = {"kind": "elephant", "name": "Dumbo", "age": 10}
+    with pytest.raises(ValueError, match="Kind elephant is not registered"):
         Animal.model_validate(data)
 
 
 def test_discriminated_missing_kind():
     """Test that missing kind raises an error."""
-    data = {"name": "Unknown"}
+    data = {"name": "Felix", "lives": 9}
     with pytest.raises(ValueError, match="Kind is not provided"):
         Animal.model_validate(data)
-
-
-def test_discriminated_direct_instantiation():
-    """Test that subclasses can be instantiated directly."""
-    dog = Dog(name="Buddy", breed="Labrador")
-    assert dog.kind == "dog"
-    assert isinstance(dog, Animal)
-    assert isinstance(dog, Dog)
