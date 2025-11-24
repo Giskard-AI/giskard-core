@@ -27,13 +27,13 @@ class _Registry:
         self.subclasses[base_cls] = {}
         self.reverse_subclasses[base_cls] = base_cls
 
-    def _get_base_cls(self, cls: type) -> type | None:
+    def get_base_cls(self, cls: type) -> type | None:
         if cls in self.subclasses:
             return cls
 
         for base in cls.__bases__:
             if issubclass(base, Discriminated):
-                return self._get_base_cls(base)
+                return self.get_base_cls(base)
 
         return None
 
@@ -41,7 +41,7 @@ class _Registry:
         if not issubclass(target_cls, base_cls):
             raise ValueError(f"Class {target_cls} is not a subclass of {base_cls}")
 
-        actual_base_cls = self._get_base_cls(base_cls)
+        actual_base_cls = self.get_base_cls(base_cls)
         if actual_base_cls is None:
             raise ValueError(f"Class {base_cls} is not registered")
 
@@ -77,20 +77,14 @@ class _Registry:
             raise ValueError(f"Kind is not provided for {cls}")
 
         # Resolve the base class for generic types
-        base_cls = cls
-        if cls not in self.subclasses:
-            origin = get_origin(cls)
-            if origin and origin in self.subclasses:
-                base_cls = origin
-            else:
-                meta = getattr(cls, "__pydantic_generic_metadata__", None)
-                if isinstance(meta, dict) and meta.get("origin") in self.subclasses:
-                    base_cls = meta["origin"]
+        actual_base_cls = self.get_base_cls(cls)
+        if not actual_base_cls:
+            raise ValueError(f"Class {cls} is not registered")
 
-        if kind not in self.subclasses[base_cls]:
-            raise ValueError(f"Kind {kind} is not registered for {base_cls}")
+        if kind not in self.subclasses[actual_base_cls]:
+            raise ValueError(f"Kind {kind} is not registered for {actual_base_cls}")
 
-        return self.subclasses[base_cls][kind]
+        return self.subclasses[actual_base_cls][kind]
 
     def get_kind(self, cls: type) -> str | None:
         return self.kinds.get(cls, None)
@@ -189,7 +183,8 @@ class Discriminated(BaseModel):
         by_name: bool | None = None,
         extra: ExtraValues | None = None,
     ):
-        if _REGISTRY.is_base_cls(cls):
+        target_cls = _REGISTRY.get_target_cls(cls, obj)
+        if target_cls != cls:
             return _REGISTRY.get_target_cls(cls, obj).model_validate(
                 obj,
                 strict=strict,
