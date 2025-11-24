@@ -27,17 +27,28 @@ class _Registry:
         self.subclasses[base_cls] = {}
         self.reverse_subclasses[base_cls] = base_cls
 
+    def _get_base_cls(self, cls: type) -> type | None:
+        if cls in self.subclasses:
+            return cls
+
+        for base in cls.__bases__:
+            if issubclass(base, Discriminated):
+                return self._get_base_cls(base)
+
+        return None
+
     def register_subclass(self, target_cls: type, base_cls: type, kind: str):
         if not issubclass(target_cls, base_cls):
             raise ValueError(f"Class {target_cls} is not a subclass of {base_cls}")
 
-        if base_cls not in self.subclasses:
+        actual_base_cls = self._get_base_cls(base_cls)
+        if actual_base_cls is None:
             raise ValueError(f"Class {base_cls} is not registered")
 
-        if kind in self.subclasses[base_cls]:
+        if kind in self.subclasses[actual_base_cls]:
             raise ValueError(f"Kind {kind} is already registered for {base_cls}")
 
-        self.subclasses[base_cls][kind] = target_cls
+        self.subclasses[actual_base_cls][kind] = target_cls
         self.reverse_subclasses[target_cls] = base_cls
         self.kinds[target_cls] = kind
 
@@ -77,14 +88,6 @@ class _Registry:
                     base_cls = meta["origin"]
 
         if kind not in self.subclasses[base_cls]:
-            # If kind is not found in base_cls registry, check if any registered
-            # subclass is itself a discriminated base and might have this kind
-            for registered_subclass in self.subclasses[base_cls].values():
-                if registered_subclass in self.subclasses:
-                    # This subclass is itself a discriminated base, check its registry
-                    if kind in self.subclasses[registered_subclass]:
-                        # Found in nested discriminated base, resolve through it
-                        return self.subclasses[registered_subclass][kind]
             raise ValueError(f"Kind {kind} is not registered for {base_cls}")
 
         return self.subclasses[base_cls][kind]
