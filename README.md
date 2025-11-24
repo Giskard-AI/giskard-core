@@ -12,7 +12,7 @@ pip install giskard-core
 
 ## Requirements
 
-- Python >= 3.11
+- Python >= 3.12
 - pydantic >= 2.11.0, < 3
 
 ## Development
