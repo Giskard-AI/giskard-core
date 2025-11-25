@@ -23,3 +23,7 @@ make test     # Run tests
 make lint     # Run linting
 make format   # Format code
 ```
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
