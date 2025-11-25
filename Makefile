@@ -42,6 +42,16 @@ check-compat: ## Check Python 3.11 compatibility
 typecheck: ## Run type checking with basedpyright
 	uv tool run basedpyright --level error .
 
+security: ## Check for security vulnerabilities
+	uv run pip-audit .
+
+generate-licenses: ## Generate licenses
+	uv tool run licensecheck --license MIT \
+		--format markdown --file THIRD_PARTY_NOTICES.md
+
+check-licenses: ## Check for licenses
+	uv tool run licensecheck --license MIT --show-only-failing --zero
+
 # Pre-commit targets
 pre-commit-install: ## Install pre-commit hooks
 	pre-commit install
@@ -50,7 +60,7 @@ pre-commit-run: ## Run pre-commit on all files
 	pre-commit run --all-files
 
 # Combined targets
-check: lint check-format check-compat typecheck ## Run all checks (lint, format, compatibility, typecheck)
+check: lint check-format check-compat typecheck security check-licenses ## Run all checks (lint, format, compatibility, typecheck)
 
 all: format check test ## Format, check, and test
 
