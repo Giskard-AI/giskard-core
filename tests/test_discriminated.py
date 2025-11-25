@@ -1,5 +1,7 @@
 """Tests for discriminated union functionality."""
 
+from typing import Generic, TypeVar
+
 import pytest
 from giskard.core import Discriminated, discriminated_base
 
@@ -90,34 +92,37 @@ def test_discriminated_missing_kind():
         Animal.model_validate(data)
 
 
+T = TypeVar("T")
+
+
 @discriminated_base
-class GenericAnimal[T](Discriminated):
+class GenericAnimal(Discriminated, Generic[T]):
     """Base class for generic animals."""
 
     name: str
     value: T
 
 
-class GenericPet[T](GenericAnimal[T]):
+class GenericPet(GenericAnimal[T]):
     """Base class for generic pets."""
 
 
 @GenericAnimal.register("dog")
-class GenericDog[T](GenericPet[T]):
+class GenericDog(GenericPet[T]):
     """A dog."""
 
     breed: str
 
 
 @GenericPet.register("cat")
-class GenericCat[T](GenericPet[T]):
+class GenericCat(GenericPet[T]):
     """A cat."""
 
     lives: int
 
 
 @GenericAnimal.register("tigger")
-class GenericTigger[T](GenericPet[T]):
+class GenericTigger(GenericPet[T]):
     """A tigger."""
 
     stripes: int
@@ -126,14 +131,12 @@ class GenericTigger[T](GenericPet[T]):
 @pytest.mark.parametrize(
     "animal,kind",
     [
-        (GenericDog[int](name="Buddy", value=100, breed="Labrador"), "dog"),
-        (GenericCat[str](name="Whiskers", value="Meow", lives=9), "cat"),
-        (GenericTigger[float](name="Tigger", value=1.0, stripes=100), "tigger"),
+        (GenericDog(name="Buddy", value=100, breed="Labrador"), "dog"),
+        (GenericCat(name="Whiskers", value="Meow", lives=9), "cat"),
+        (GenericTigger(name="Tigger", value=1.0, stripes=100), "tigger"),
     ],
 )
-def test_discriminated_generic_base_registration[T](
-    animal: GenericAnimal[T], kind: str
-):
+def test_discriminated_generic_base_registration(animal: GenericAnimal[T], kind: str):
     """Test that discriminated_base decorator registers the base class."""
     assert animal.kind == kind
 
