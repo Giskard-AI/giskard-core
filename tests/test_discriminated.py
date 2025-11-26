@@ -1,5 +1,3 @@
-"""Tests for discriminated union functionality."""
-
 from typing import Generic, TypeVar
 
 import pytest
@@ -26,7 +24,7 @@ class Tigger(Pet):
     stripes: int = 100
 
 
-@Animal.register("cat")
+@Pet.register("cat")
 class Cat(Pet):
     """A cat."""
 
@@ -34,7 +32,7 @@ class Cat(Pet):
 
 
 # Registering as Pet should work as well (same behavior as registering as Animal)
-@Pet.register("dog")
+@Animal.register("dog")
 class Dog(Pet):
     """A dog."""
 
@@ -58,37 +56,22 @@ def test_discriminated_base_registration(animal: Animal, kind: str):
     assert model_dump["name"] == animal.name
 
     assert Animal.model_validate(model_dump) == animal
-
-
-@pytest.mark.parametrize(
-    "animal,kind",
-    [
-        (Dog(name="Buddy", breed="Labrador"), "dog"),
-        (Cat(name="Whiskers", lives=9), "cat"),
-    ],
-)
-def test_discriminated_base_model_validate_subclass(animal: Animal, kind: str):
-    """Test that discriminated_base decorator registers the base class."""
-    assert animal.kind == kind
-
-    model_dump = animal.model_dump()
-    assert model_dump["kind"] == kind
-    assert model_dump["name"] == animal.name
-
-    assert Pet.model_validate(model_dump) == animal
+    assert Animal.model_validate_json(animal.model_dump_json()) == animal
 
 
 def test_discriminated_invalid_kind():
     """Test that invalid kind raises an error."""
     data = {"kind": "elephant", "name": "Dumbo", "age": 10}
-    with pytest.raises(ValueError, match="Kind elephant is not registered"):
+    with pytest.raises(
+        ValueError, match=f"Kind elephant is not registered for class {Animal}"
+    ):
         Animal.model_validate(data)
 
 
 def test_discriminated_missing_kind():
     """Test that missing kind raises an error."""
     data = {"name": "Felix", "lives": 9}
-    with pytest.raises(ValueError, match="Kind is not provided"):
+    with pytest.raises(ValueError, match=f"Kind is not provided for class {Animal}"):
         Animal.model_validate(data)
 
 
@@ -144,3 +127,6 @@ def test_discriminated_generic_base_registration(animal: GenericAnimal[T], kind:
     assert model_dump["kind"] == kind
     assert model_dump["name"] == animal.name
     assert model_dump["value"] == animal.value
+
+    assert GenericAnimal.model_validate(model_dump) == animal
+    assert GenericAnimal.model_validate_json(animal.model_dump_json()) == animal

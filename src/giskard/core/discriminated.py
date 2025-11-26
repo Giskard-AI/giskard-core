@@ -1,122 +1,68 @@
-from __future__ import annotations
+import sys
+from collections import defaultdict
+from typing import Any, Callable, Generic, TypeVar
 
-from typing import Any, Callable, TypeVar, get_origin
-
-from pydantic import BaseModel, GetCoreSchemaHandler, computed_field
-from pydantic.config import ExtraValues
+from pydantic import (
+    BaseModel,
+    GetCoreSchemaHandler,
+    computed_field,
+)
 from pydantic_core import core_schema
 
-DISCRIMINATOR = "kind"
+T = TypeVar("T")
 
-T = TypeVar("T", bound=type)
+CURRENT_MODULE_NAME = sys.modules[__name__].__name__
 
 
-class _Registry:
+class _Registry(Generic[T]):
     def __init__(self):
-        self.subclasses: dict[type, dict[str, type]] = {}
-        self.reverse_subclasses: dict[type, type] = {}
-        self.kinds: dict[type, str] = {}
+        self._subclasses: dict[type, dict[str, type]] = {}
+        self._kinds: dict[type[T], str] = {}
+        self._reverse_kinds: dict[type[T], dict[str, type[T]]] = defaultdict(dict)
 
-    def register_base(self, base_cls: type):
+    def register_base(self, base_cls: type[T]):
         if not issubclass(base_cls, Discriminated):
             raise ValueError(f"Class {base_cls} is not a subclass of Discriminated")
 
-        if base_cls in self.subclasses:
+        if base_cls in self._subclasses:
             raise ValueError(f"Class {base_cls} is already registered")
 
-        self.subclasses[base_cls] = {}
-        self.reverse_subclasses[base_cls] = base_cls
+        self._subclasses[base_cls] = {}
 
-    def get_base_cls(self, cls: type) -> type | None:
-        if cls in self.subclasses:
+    def _get_base_cls(self, cls: type[T]) -> type[T] | None:
+        if cls in self._subclasses:
             return cls
 
         for base in cls.__bases__:
-            if issubclass(base, Discriminated):
-                return self.get_base_cls(base)
+            subclass = self._get_base_cls(base)
+            if subclass is not None:
+                return subclass
 
         return None
 
-    def register_subclass(self, target_cls: type, base_cls: type, kind: str):
-        if not issubclass(target_cls, base_cls):
-            raise ValueError(f"Class {target_cls} is not a subclass of {base_cls}")
+    def register_subclass(self, base_cls: type[T], subclass: type[T], kind: str):
+        if not issubclass(subclass, base_cls):
+            raise ValueError(f"Class {subclass} is not a subclass of {base_cls}")
 
-        actual_base_cls = self.get_base_cls(base_cls)
+        actual_base_cls = self._get_base_cls(base_cls)
+
         if actual_base_cls is None:
-            raise ValueError(f"Class {base_cls} is not registered")
+            raise ValueError(
+                f"Class {base_cls} is not registered with @discriminated_base"
+            )
 
-        if kind in self.subclasses[actual_base_cls]:
+        if kind in self._subclasses[actual_base_cls]:
             raise ValueError(f"Kind {kind} is already registered for {base_cls}")
 
-        self.subclasses[actual_base_cls][kind] = target_cls
-        self.reverse_subclasses[target_cls] = base_cls
-        self.kinds[target_cls] = kind
-
-    def is_base_cls(self, cls: type) -> bool:
-        if cls in self.subclasses:
-            return True
-
-        origin = get_origin(cls)
-        if origin and origin in self.subclasses:
-            return True
-
-        meta = getattr(cls, "__pydantic_generic_metadata__", None)
-        if isinstance(meta, dict) and meta.get("origin"):
-            return meta["origin"] in self.subclasses
-
-        return False
-
-    def get_target_cls(self, cls: type, obj: Any) -> type:
-        kind = (
-            obj.get("kind", None)
-            if isinstance(obj, dict)
-            else getattr(obj, "kind", None)
-        )
-
-        if kind is None:
-            raise ValueError(f"Kind is not provided for {cls}")
-
-        # Resolve the base class for generic types
-        actual_base_cls = self.get_base_cls(cls)
-        if not actual_base_cls:
-            raise ValueError(f"Class {cls} is not registered")
-
-        if kind not in self.subclasses[actual_base_cls]:
-            raise ValueError(f"Kind {kind} is not registered for {actual_base_cls}")
-
-        return self.subclasses[actual_base_cls][kind]
-
-    def get_kind(self, cls: type) -> str | None:
-        return self.kinds.get(cls, None)
+        self._subclasses[actual_base_cls][kind] = subclass
+        self._kinds[subclass] = kind
+        self._reverse_kinds[actual_base_cls][kind] = subclass
 
 
 _REGISTRY = _Registry()
 
 
 class Discriminated(BaseModel):
-    """Base class for discriminated union types.
-
-    Provides a polymorphic type system with automatic serialization using
-    a 'kind' discriminator field. Subclasses are registered and resolved
-    automatically during validation.
-
-    Examples
-    --------
-    >>> @discriminated_base
-    ... class Animal(Discriminated):
-    ...     pass
-    >>>
-    >>> @Animal.register("dog")
-    ... class Dog(Animal):
-    ...     breed: str
-    >>>
-    >>> dog = Dog(breed="Labrador")
-    >>> dog.kind
-    'dog'
-    >>> serialized = dog.model_dump()
-    >>> Animal.model_validate(serialized)  # Returns Dog instance
-    """
-
     @computed_field
     def kind(self) -> str | None:
         """The discriminator field identifying the concrete type.
@@ -129,99 +75,46 @@ class Discriminated(BaseModel):
         cls = self.__class__
 
         # Check if the class is directly registered
-        if cls in _REGISTRY.kinds:
-            return _REGISTRY.kinds[cls]
-
-        # Try to resolve the base class for generic types
-        origin = get_origin(cls)
-        if origin and origin in _REGISTRY.kinds:
-            return _REGISTRY.kinds[origin]
-
-        # Try pydantic generic metadata
-        meta = getattr(cls, "__pydantic_generic_metadata__", None)
-        if isinstance(meta, dict) and meta.get("origin") in _REGISTRY.kinds:
-            return _REGISTRY.kinds[meta["origin"]]
+        if cls in _REGISTRY._kinds:
+            return _REGISTRY._kinds[cls]
 
         return None
 
     @classmethod
-    def register(cls, kind: str) -> Callable[[T], T]:
-        """Decorator to register a subclass with a kind identifier.
-
-        Parameters
-        ----------
-        kind : str
-            Unique identifier for this subclass.
-
-        Returns
-        -------
-        Callable[[T], T]
-            Decorator that registers the class.
-
-        Examples
-        --------
-        >>> @Check.register("custom")
-        ... class CustomCheck(Check):
-        ...     pass
-        """
-
-        def decorator(target_cls: T) -> T:
-            _REGISTRY.register_subclass(target_cls, cls, kind)
-            return target_cls
+    def register(cls, kind: str) -> Callable[[type[T]], type[T]]:
+        def decorator(subclass: type[T]) -> type[T]:
+            _REGISTRY.register_subclass(cls, subclass, kind)
+            return subclass
 
         return decorator
-
-    @classmethod
-    def model_validate(
-        cls,
-        obj: Any,
-        *,
-        strict: bool | None = None,
-        from_attributes: bool | None = None,
-        context: Any | None = None,
-        by_alias: bool | None = None,
-        by_name: bool | None = None,
-        extra: ExtraValues | None = None,
-    ):
-        target_cls = _REGISTRY.get_target_cls(cls, obj)
-        if target_cls != cls:
-            return _REGISTRY.get_target_cls(cls, obj).model_validate(
-                obj,
-                strict=strict,
-                from_attributes=from_attributes,
-                context=context,
-                by_alias=by_alias,
-                by_name=by_name,
-                extra=extra,
-            )
-
-        return super().model_validate(
-            obj,
-            strict=strict,
-            from_attributes=from_attributes,
-            context=context,
-            by_alias=by_alias,
-            by_name=by_name,
-            extra=extra,
-        )
 
     @classmethod
     def __get_pydantic_core_schema__(
         cls, source: Any, handler: GetCoreSchemaHandler
     ) -> core_schema.CoreSchema:
-        if not _REGISTRY.is_base_cls(cls):
+        if not any(
+            base.__name__ == "Discriminated" and base.__module__ == CURRENT_MODULE_NAME
+            for base in cls.__bases__
+        ):
             return handler(source)
 
         def validate_discriminated(value: Any) -> Any:
             if isinstance(value, Discriminated):
                 return value
 
-            return _REGISTRY.get_target_cls(cls, value).model_validate(value)
+            kind = value.get("kind", None)
+            if kind is None:
+                raise ValueError(f"Kind is not provided for class {cls}")
+
+            if kind not in _REGISTRY._reverse_kinds[cls]:
+                raise ValueError(f"Kind {kind} is not registered for class {cls}")
+
+            return _REGISTRY._reverse_kinds[cls][kind].model_validate(value)
 
         return core_schema.no_info_plain_validator_function(validate_discriminated)
 
 
-def discriminated_base(cls: T) -> T:
+def discriminated_base(cls: type[T]) -> type[T]:
     """Mark a class as the base of a discriminated union.
 
     Use this decorator on base classes that will have multiple concrete
