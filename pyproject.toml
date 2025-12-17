@@ -46,3 +46,7 @@ include = [
   "README.md",
   "pyproject.toml",
 ]
+
+[tool.hatch.metadata.core]
+# Tells pip that 'giskard-core' is incompatible with the legacy 'giskard'.
+extra-metadata = { Obsoletes-Dist = ["giskard"] }
