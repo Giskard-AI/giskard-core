@@ -26,6 +26,25 @@ pre-commit-install: ## Setup pre-commit hooks
 test: ## Run all tests (with generator if available)
 	uv run pytest
 
+test-package-conflict: ## Test package conflict
+	@echo "Testing package conflict..."
+	@echo "Creating virtual environment..."
+	uv venv --seed -p 3.11 .venv-package-conflict
+	@echo "Installing giskard..."
+	.venv-package-conflict/bin/pip install giskard
+	@echo "Installing giskard-core..."
+	.venv-package-conflict/bin/pip install .
+	@echo "Testing import giskard.core raises expected error..."
+	@ERROR_OUTPUT=$$(.venv-package-conflict/bin/python -c "import giskard.core" 2>&1) || true; \
+	echo "$$ERROR_OUTPUT" | grep -q "Package conflict detected: The legacy package 'giskard' is installed" || \
+		(echo "Error: Expected error message not found for 'import giskard.core'" && echo "Got: $$ERROR_OUTPUT" && exit 1)
+	@echo "Testing import giskard raises expected error..."
+	@ERROR_OUTPUT=$$(.venv-package-conflict/bin/python -c "import giskard" 2>&1) || true; \
+	echo "$$ERROR_OUTPUT" | grep -q "Package conflict detected: The legacy package 'giskard' is installed" || \
+		(echo "Error: Expected error message not found for 'import giskard'" && echo "Got: $$ERROR_OUTPUT" && exit 1)
+	@echo "✓ Package conflict test passed!"
+	rm -rf .venv-package-conflict
+
 lint: ## Run linting checks
 	uv tool run ruff check .
 

@@ -49,3 +49,7 @@ jobs:
 
       - name: Run the tests
         run: make test
+
+      - name: Test package conflict
+        if: matrix.python-version == '3.11'
+        run: make test-package-conflict
