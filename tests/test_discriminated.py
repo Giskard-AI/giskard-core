@@ -130,3 +130,10 @@ def test_discriminated_generic_base_registration(animal: GenericAnimal[T], kind:
 
     assert GenericAnimal.model_validate(model_dump) == animal
     assert GenericAnimal.model_validate_json(animal.model_dump_json()) == animal
+
+
+def test_discriminated_generic_with_concrete_type():
+    """Test that discriminated_base decorator registers the base class."""
+    dog = GenericDog(name="Buddy", value=100, breed="Labrador")
+    model_dump = dog.model_dump()
+    assert GenericAnimal[int].model_validate(model_dump) == dog
