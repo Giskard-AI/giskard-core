@@ -2,6 +2,7 @@ from typing import Generic, TypeVar
 
 import pytest
 from giskard.core import Discriminated, discriminated_base
+from pydantic import TypeAdapter, ValidationError
 
 
 @discriminated_base
@@ -137,3 +138,18 @@ def test_discriminated_generic_with_concrete_type():
     dog = GenericDog(name="Buddy", value=100, breed="Labrador")
     model_dump = dog.model_dump()
     assert GenericAnimal[int].model_validate(model_dump) == dog
+
+
+def test_complex_type_adapter():
+    type_adapter = TypeAdapter(GenericAnimal | int)
+
+    assert type_adapter.validate_python(1) == 1
+    assert (
+        type_adapter.validate_python("1") == 1
+    )  # Pydantic will try to convert the string to an int
+    with pytest.raises(ValidationError):
+        type_adapter.validate_python("Not a number")
+
+    dog = GenericDog(name="Buddy", value=100, breed="Labrador")
+    assert type_adapter.validate_python(dog.model_dump()) == dog
+    assert type_adapter.validate_python(dog) == dog

@@ -104,6 +104,8 @@ class Discriminated(BaseModel):
         def validate_discriminated(value: Any) -> Any:
             if isinstance(value, Discriminated):
                 return value
+            elif not isinstance(value, dict):
+                raise ValueError(f"Value {value} is not a dictionary")
 
             kind = value.get("kind", None)
             if kind is None:
