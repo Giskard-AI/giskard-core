@@ -92,9 +92,12 @@ class Discriminated(BaseModel):
     def __get_pydantic_core_schema__(
         cls, source: Any, handler: GetCoreSchemaHandler
     ) -> core_schema.CoreSchema:
+        metadata = getattr(cls, "__pydantic_generic_metadata__", {})
+        origin = metadata.get("origin") or cls
+
         if not any(
             base.__name__ == "Discriminated" and base.__module__ == CURRENT_MODULE_NAME
-            for base in cls.__bases__
+            for base in origin.__bases__
         ):
             return handler(source)
 
@@ -104,12 +107,12 @@ class Discriminated(BaseModel):
 
             kind = value.get("kind", None)
             if kind is None:
-                raise ValueError(f"Kind is not provided for class {cls}")
+                raise ValueError(f"Kind is not provided for class {origin}")
 
-            if kind not in _REGISTRY._reverse_kinds[cls]:
-                raise ValueError(f"Kind {kind} is not registered for class {cls}")
+            if kind not in _REGISTRY._reverse_kinds[origin]:
+                raise ValueError(f"Kind {kind} is not registered for class {origin}")
 
-            return _REGISTRY._reverse_kinds[cls][kind].model_validate(value)
+            return _REGISTRY._reverse_kinds[origin][kind].model_validate(value)
 
         return core_schema.no_info_plain_validator_function(validate_discriminated)
 
