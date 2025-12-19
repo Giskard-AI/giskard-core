@@ -2,6 +2,7 @@ from typing import Generic, TypeVar
 
 import pytest
 from giskard.core import Discriminated, discriminated_base
+from pydantic import TypeAdapter, ValidationError
 
 
 @discriminated_base
@@ -137,3 +138,85 @@ def test_discriminated_generic_with_concrete_type():
     dog = GenericDog(name="Buddy", value=100, breed="Labrador")
     model_dump = dog.model_dump()
     assert GenericAnimal[int].model_validate(model_dump) == dog
+
+
+def test_complex_type_adapter():
+    type_adapter = TypeAdapter(GenericAnimal | int)
+
+    assert type_adapter.validate_python(1) == 1
+    assert (
+        type_adapter.validate_python("1") == 1
+    )  # Pydantic will try to convert the string to an int
+    with pytest.raises(ValidationError):
+        type_adapter.validate_python("Not a number")
+
+    dog = GenericDog(name="Buddy", value=100, breed="Labrador")
+    assert type_adapter.validate_python(dog.model_dump()) == dog
+    assert type_adapter.validate_python(dog) == dog
+
+
+def test_type_adpter_with_dict():
+    type_adapter = TypeAdapter(GenericAnimal | dict)
+
+    assert type_adapter.validate_python({"test": 1}) == {
+        "test": 1
+    }  # No kind, will be parsed as dict
+    assert type_adapter.validate_python({"kind": {"test": 1}}) == {
+        "kind": {"test": 1}
+    }  # Kind is not a string, will be parsed as dict
+    assert type_adapter.validate_python({"kind": "dog"}) == {
+        "kind": "dog"
+    }  # Kind is a string, but will fail to parse as the corresponding class
+    assert type_adapter.validate_python({"kind": "rabbit"}) == {
+        "kind": "rabbit"
+    }  # Kind is a string, but not registered for any class
+
+
+@discriminated_base
+class Furniture(Discriminated):
+    """Base class for animals."""
+
+    name: str
+
+
+@Furniture.register("chair")
+class Chair(Furniture):
+    """A chair."""
+
+    color: str
+
+
+def test_type_adpter_with_multiple_discriminated():
+    type_adapter = TypeAdapter(GenericAnimal | Furniture)
+
+    assert type_adapter.validate_python(
+        {"kind": "chair", "name": "Chair", "color": "Red"}
+    ) == Chair(name="Chair", color="Red")
+    assert type_adapter.validate_python(
+        {"kind": "dog", "name": "Buddy", "value": 100, "breed": "Labrador"}
+    ) == GenericDog(name="Buddy", value=100, breed="Labrador")
+
+
+def test_type_adpter_with_multiple_discriminated_kind_conflicts():
+    animal_first_adapter = TypeAdapter(GenericAnimal | Furniture)
+    furniture_first_adapter = TypeAdapter(Furniture | GenericAnimal)
+
+    @Furniture.register("dog")
+    class WronglyRegisteredDog(Furniture):
+        """A dog."""
+
+        breed: str
+
+    assert animal_first_adapter.validate_python(
+        {"kind": "chair", "name": "Chair", "color": "Red"}
+    ) == Chair(name="Chair", color="Red")
+    assert animal_first_adapter.validate_python(
+        {"kind": "dog", "name": "Buddy", "value": 100, "breed": "Labrador"}
+    ) == GenericDog(name="Buddy", value=100, breed="Labrador")
+
+    assert furniture_first_adapter.validate_python(
+        {"kind": "chair", "name": "Chair", "color": "Red"}
+    ) == Chair(name="Chair", color="Red")
+    assert furniture_first_adapter.validate_python(
+        {"kind": "dog", "name": "Buddy", "value": 100, "breed": "Labrador"}
+    ) == WronglyRegisteredDog(name="Buddy", breed="Labrador")
