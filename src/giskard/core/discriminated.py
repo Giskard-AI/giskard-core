@@ -107,9 +107,12 @@ class Discriminated(BaseModel):
             elif not isinstance(value, dict):
                 raise ValueError(f"Value {value} is not a dictionary")
 
-            kind = value.get("kind", None)
-            if kind is None:
+            if "kind" not in value:
                 raise ValueError(f"Kind is not provided for class {origin}")
+
+            kind = value["kind"]
+            if not isinstance(kind, str):
+                raise ValueError(f"Kind is expected to be a string, got {type(kind)}")
 
             if kind not in _REGISTRY._reverse_kinds[origin]:
                 raise ValueError(f"Kind {kind} is not registered for class {origin}")
